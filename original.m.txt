@@ -1,0 +1,78 @@
+x = load('Sayyam Palrecha - speech_with_beeps.txt');
+plotting(x, 1, 'Time', 'Frequency', 'Spectrogram of speech with beeps');
+%soundsc(Sayyam_Palrecha___speech_with_beeps);
+
+% Parameters for computing STFT
+fs = 8000; 
+winlen = 160; 
+overlap = winlen/2;
+nfft = winlen; 
+
+[S, f, t] = stft(x, hamming(winlen), overlap, nfft, fs);
+
+y = istft(S, winlen, overlap, nfft);
+soundsc(y);
+
+%plotting spectrofram of speech signal
+plotting(y, 2, 'Time (s)', 'Frequency (Hz)', 'Spectrogram of speech signal');
+
+function [STFT, f, t] = stft(x, window, overlap, nfft, fs)
+    x = x(:);
+    xlen = length(x);
+    winlen = length(window);
+
+    NUP = ceil((1+nfft)/2);     % calculate the number of unique fft points
+    L = 1+fix((xlen-winlen)/overlap); % calculate the number of signal frames
+    STFT = zeros(NUP, L);       % preallocate the stft matrix
+
+    for i = 0:L-1
+        xw = x(1+i*overlap : winlen+i*overlap) .* window;
+        X = fft(xw, nfft);
+        avg_value = mean(abs(X(1:NUP)));
+        sigma = std(abs(X(1:NUP)));
+        X_abs = abs(X(1:NUP));
+        X_smooth = adaptive_smoothing(X_abs, 0.5);
+        alpha = (max(X_abs) - avg_value) / max(abs(X_smooth) - median(X_smooth));
+        threshold = avg_value + sigma * alpha;
+        for j = 1:NUP
+            if abs(X(j)) > threshold
+                X(j) = X(j) * 1e-20;
+            end
+        end
+        
+        STFT(:, i+1) = X(1:NUP);
+    end
+
+    t = (winlen/2 : overlap : winlen/2 + (L-1)*overlap) / fs;
+    f = (0:NUP-1) * fs / nfft;
+end
+
+function smoothed_signal = adaptive_smoothing(signal, window_size) 
+    smoothed_signal = zeros(size(signal));
+    for i = 1:length(signal)
+        start_idx = max(1, i - floor(window_size / 2));
+        end_idx = min(length(signal), i + floor(window_size / 2));
+        smoothed_signal(i) = mean(signal(start_idx:end_idx));
+    end
+end
+
+% ISTFT function
+function x = istft(S, window, overlap, nfft)
+    xlen = (size(S,2)-1)*overlap + nfft;
+    x = zeros(xlen, 1);
+    for n = 1:size(S,2)
+        start_idx = (n-1)*overlap + 1;
+        end_idx = start_idx + nfft - 1;
+        x_seg = real(ifft(S(:,n), nfft));
+        x(start_idx:end_idx) = x(start_idx:end_idx) + x_seg .* window;
+    end
+    x = (x/sum(window))'; %scaling
+end
+
+function plotting(y, index, xaxis, yaxis, Title)
+    subplot(2,1,index);
+    specgram(y);
+    xlabel(xaxis);
+    ylabel(yaxis);
+    title(Title);
+end
